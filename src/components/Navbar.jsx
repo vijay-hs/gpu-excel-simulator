@@ -1,11 +1,12 @@
 import React from 'react';
-import { Cpu, FileSpreadsheet, Layers, Zap, Activity, Download, HardDrive, Calculator } from 'lucide-react';
+import { Cpu, FileSpreadsheet, Layers, Zap, Activity, Download, HardDrive, Calculator, BookOpen } from 'lucide-react';
 import { exportGpuSimulatorWorkbook } from '../utils/excelExporter';
 import confetti from 'canvas-confetti';
 
 export default function Navbar({ activeTab, setActiveTab, matrixA, matrixB, tileWidth }) {
   const tabs = [
-    { id: 'simulator', label: 'Interactive GEMM Simulator', icon: Cpu, badge: 'Live Core' },
+    { id: 'simulator', label: 'Interactive GEMM', icon: Cpu, badge: 'Live Core' },
+    { id: 'terminology', label: 'GPU Terms & HW Map', icon: BookOpen, badge: 'Concepts' },
     { id: 'block-reduction', label: 'Block GEMM & Reduction', icon: Calculator, badge: 'Math Deep Dive' },
     { id: 'excel-model', label: 'Excel Mental Model', icon: FileSpreadsheet, badge: 'Formulas' },
     { id: 'hardware', label: 'GPU Hardware & SM', icon: HardDrive, badge: 'Architecture' },
@@ -40,7 +41,7 @@ export default function Navbar({ activeTab, setActiveTab, matrixA, matrixB, tile
               </span>
             </div>
             <p className="text-xs text-slate-400">
-              Interactive Block GEMM, Partial Products, Register Reduction & CUDA Visualization
+              GPU Terminology, Block GEMM, Warp SIMT & CUDA Architecture
             </p>
           </div>
         </div>

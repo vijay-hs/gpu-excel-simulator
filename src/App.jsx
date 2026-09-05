@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import Navbar from './components/Navbar';
 import SimulatorView from './components/SimulatorView';
+import GpuTerminologyView from './components/GpuTerminologyView';
 import BlockGemmReductionView from './components/BlockGemmReductionView';
 import ExcelMentalModelView from './components/ExcelMentalModelView';
 import HardwareArchView from './components/HardwareArchView';
@@ -51,6 +52,8 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'terminology' && <GpuTerminologyView />}
+
         {activeTab === 'block-reduction' && (
           <BlockGemmReductionView
             matrixA={matrixA}
@@ -79,7 +82,7 @@ export default function App() {
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
           <span>GPU Matrix Multiplication & Architecture Simulator • Excel Mental Model</span>
           <span className="font-mono text-[11px] text-slate-400">
-            Block GEMM • Partial Product Matrix Sum • Register Reduction
+            Thread • Warp • Thread Block • SM • Grid • Memory Hierarchy
           </span>
         </div>
       </footer>
