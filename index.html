@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230ea5e9' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='4' y='4' width='16' height='16' rx='2'/><rect x='9' y='9' width='6' height='6'/><path d='M9 1v3'/><path d='M15 1v3'/><path d='M9 20v3'/><path d='M15 20v3'/><path d='M20 9h3'/><path d='M20 14h3'/><path d='M1 9h3'/><path d='M1 14h3'/></svg>" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GPU Matrix Engine & Excel Architecture Simulator</title>
+    <meta name="description" content="Interactive GPU architecture and Tiled Matrix Multiplication (GEMM) simulator using an Excel spreadsheet mental model." />
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              cyan: {
+                400: '#38bdf8',
+                500: '#0ea5e9',
+              }
+            }
+          }
+        }
+      }
+    </script>
+  </head>
+  <body class="bg-[#0b0f19] text-slate-100 antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
