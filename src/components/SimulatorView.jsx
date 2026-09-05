@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, SkipForward, SkipBack, RotateCcw, Zap, Layers, Cpu, Code, Info, CheckCircle2, Flame } from 'lucide-react';
+import { Play, Pause, SkipForward, SkipBack, RotateCcw, Zap, Layers, Cpu, Code, Info, CheckCircle2, Flame, Repeat, Eye } from 'lucide-react';
 import { CUDA_TILED_CODE, CUDA_NAIVE_CODE } from '../data/constants';
 import { toExcelCoord, getExcelFormulaForCell } from '../utils/gemmEngine';
 
@@ -11,36 +11,45 @@ export default function SimulatorView({
   selectedPreset,
   setSelectedPreset,
   algorithmMode,
-  setAlgorithmMode
+  setAlgorithmMode,
+  onOpenReductionTab
 }) {
   const [currentStepIdx, setCurrentStepIdx] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [autoLoop, setAutoLoop] = useState(false);
+  const [selectedBlock, setSelectedBlock] = useState('0_0'); // 'all' or 'bx_by'
   const [selectedCell, setSelectedCell] = useState({ r: 0, c: 0 }); // Focus cell in Matrix C
 
   const timerRef = useRef(null);
 
   const N = matrixA.length;
+  const gridDim = Math.ceil(N / tileWidth);
   const currentStep = executionTrace[currentStepIdx] || executionTrace[0];
   const maxSteps = executionTrace.length - 1;
+  const isFinished = currentStepIdx === maxSteps;
 
-  // Auto playback loop
+  // Auto playback loop with Auto-Loop support
   useEffect(() => {
     if (isPlaying) {
       timerRef.current = setInterval(() => {
         setCurrentStepIdx((prev) => {
           if (prev >= maxSteps) {
-            setIsPlaying(false);
-            return prev;
+            if (autoLoop) {
+              return 0; // Loop back to start
+            } else {
+              setIsPlaying(false);
+              return prev;
+            }
           }
           return prev + 1;
         });
-      }, 1400 / playbackSpeed);
+      }, 1300 / playbackSpeed);
     } else {
       clearInterval(timerRef.current);
     }
     return () => clearInterval(timerRef.current);
-  }, [isPlaying, maxSteps, playbackSpeed]);
+  }, [isPlaying, maxSteps, playbackSpeed, autoLoop]);
 
   const handleStepNext = () => {
     setIsPlaying(false);
@@ -52,27 +61,58 @@ export default function SimulatorView({
     if (currentStepIdx > 0) setCurrentStepIdx(currentStepIdx - 1);
   };
 
-  const handleReset = () => {
+  const handleResetAndReplay = () => {
+    setCurrentStepIdx(0);
+    setIsPlaying(true);
+  };
+
+  const handleResetOnly = () => {
     setIsPlaying(false);
     setCurrentStepIdx(0);
   };
 
-  // Helper to check if a cell in Matrix A is part of active DRAM load
-  const isCellActiveInA = (r, c) => {
-    return currentStep.activeTilesA?.some((item) => item.r === r && item.c === c);
+  // Get current active block data
+  const currentBlockKey = selectedBlock === 'all' ? '0_0' : selectedBlock;
+  const activeBlockData = currentStep.blockData?.[currentBlockKey] || {
+    sharedA: Array(tileWidth).fill(0).map(() => Array(tileWidth).fill('-')),
+    sharedB: Array(tileWidth).fill(0).map(() => Array(tileWidth).fill('-')),
+    registers: Array(tileWidth).fill(0).map(() => Array(tileWidth).fill(0))
   };
 
-  // Helper to check if a cell in Matrix B is part of active DRAM load
+  const [selBx, selBy] = currentBlockKey.split('_').map(Number);
+
+  // Helper to check if a cell in Matrix A is part of active DRAM load for the selected block
+  const isCellActiveInA = (r, c) => {
+    if (currentStep.phase === 'INIT' || currentStep.phase === 'WRITE_GLOBAL') return false;
+    const m = currentStep.tileIndex;
+    const inColStripe = c >= m * tileWidth && c < (m + 1) * tileWidth;
+    if (selectedBlock === 'all') {
+      return inColStripe;
+    } else {
+      const inRowSlice = r >= selBy * tileWidth && r < (selBy + 1) * tileWidth;
+      return inColStripe && inRowSlice;
+    }
+  };
+
+  // Helper to check if a cell in Matrix B is part of active DRAM load for the selected block
   const isCellActiveInB = (r, c) => {
-    return currentStep.activeTilesB?.some((item) => item.r === r && item.c === c);
+    if (currentStep.phase === 'INIT' || currentStep.phase === 'WRITE_GLOBAL') return false;
+    const m = currentStep.tileIndex;
+    const inRowStripe = r >= m * tileWidth && r < (m + 1) * tileWidth;
+    if (selectedBlock === 'all') {
+      return inRowStripe;
+    } else {
+      const inColSlice = c >= selBx * tileWidth && c < (selBx + 1) * tileWidth;
+      return inRowStripe && inColSlice;
+    }
   };
 
   const selectedThreadId = selectedCell.r * N + selectedCell.c;
   const selectedWarpId = Math.floor(selectedThreadId / 32);
   const selectedTx = selectedCell.c % tileWidth;
   const selectedTy = selectedCell.r % tileWidth;
-  const selectedBx = Math.floor(selectedCell.c / tileWidth);
-  const selectedBy = Math.floor(selectedCell.r / tileWidth);
+  const selectedCellBx = Math.floor(selectedCell.c / tileWidth);
+  const selectedCellBy = Math.floor(selectedCell.r / tileWidth);
 
   return (
     <div className="space-y-5">
@@ -112,7 +152,7 @@ export default function SimulatorView({
               }`}
             >
               <Zap className="w-3 h-3 text-cyan-300" />
-              <span>Tiled Shared Memory (Fast)</span>
+              <span>Tiled Shared Memory</span>
             </button>
             <button
               onClick={() => setAlgorithmMode('naive')}
@@ -123,7 +163,7 @@ export default function SimulatorView({
               }`}
             >
               <Flame className="w-3 h-3 text-rose-300" />
-              <span>Naive Direct DRAM (Slow)</span>
+              <span>Naive DRAM</span>
             </button>
           </div>
         </div>
@@ -131,7 +171,7 @@ export default function SimulatorView({
         {/* Center: Playback Controls */}
         <div className="flex items-center gap-2 bg-slate-900/90 px-3 py-1.5 rounded-xl border border-slate-800">
           <button
-            onClick={handleReset}
+            onClick={handleResetOnly}
             className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-all"
             title="Reset to Step 0"
           >
@@ -145,13 +185,25 @@ export default function SimulatorView({
           >
             <SkipBack className="w-4 h-4" />
           </button>
-          <button
-            onClick={() => setIsPlaying(!isPlaying)}
-            className="btn-primary px-3 py-1.5 text-xs rounded-lg flex items-center gap-1.5 font-bold"
-          >
-            {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-            <span>{isPlaying ? 'Pause' : 'Play Cycle'}</span>
-          </button>
+
+          {isFinished ? (
+            <button
+              onClick={handleResetAndReplay}
+              className="btn-success px-3.5 py-1.5 text-xs rounded-lg flex items-center gap-1.5 font-bold shadow-emerald-500/20"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Replay from Start</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => setIsPlaying(!isPlaying)}
+              className="btn-primary px-3 py-1.5 text-xs rounded-lg flex items-center gap-1.5 font-bold"
+            >
+              {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+              <span>{isPlaying ? 'Pause' : 'Play Cycle'}</span>
+            </button>
+          )}
+
           <button
             onClick={handleStepNext}
             disabled={currentStepIdx === maxSteps}
@@ -159,6 +211,18 @@ export default function SimulatorView({
             title="Next Step"
           >
             <SkipForward className="w-4 h-4" />
+          </button>
+
+          {/* Auto Loop Toggle */}
+          <button
+            onClick={() => setAutoLoop(!autoLoop)}
+            className={`p-1.5 rounded-lg transition-all ml-1 flex items-center gap-1 text-[11px] ${
+              autoLoop ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 font-bold' : 'text-slate-500 hover:text-slate-300'
+            }`}
+            title="Continuous Loop Playback"
+          >
+            <Repeat className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Loop</span>
           </button>
 
           {/* Speed Selector */}
@@ -178,7 +242,7 @@ export default function SimulatorView({
           </div>
         </div>
 
-        {/* Right: Step Indicator */}
+        {/* Right: Step Indicator & Scrub Slider */}
         <div className="flex items-center gap-3">
           <div className="text-right">
             <div className="text-xs font-bold text-slate-300">
@@ -190,6 +254,91 @@ export default function SimulatorView({
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Interactive Step Timeline Scrubber */}
+      <div className="glass-card px-4 py-2.5 border-slate-800 flex items-center gap-3">
+        <span className="text-[11px] font-bold text-slate-400 whitespace-nowrap">Timeline Scrub:</span>
+        <input
+          type="range"
+          min="0"
+          max={maxSteps}
+          value={currentStepIdx}
+          onChange={(e) => {
+            setIsPlaying(false);
+            setCurrentStepIdx(parseInt(e.target.value));
+          }}
+          className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+        />
+        <div className="flex items-center gap-1">
+          {executionTrace.map((st, i) => (
+            <button
+              key={i}
+              onClick={() => {
+                setIsPlaying(false);
+                setCurrentStepIdx(i);
+              }}
+              className={`w-2.5 h-2.5 rounded-full transition-all ${
+                currentStepIdx === i
+                  ? 'bg-cyan-400 ring-2 ring-cyan-400/50 scale-125'
+                  : i < currentStepIdx
+                  ? 'bg-cyan-800'
+                  : 'bg-slate-800 hover:bg-slate-700'
+              }`}
+              title={`Step ${i}: ${st.title}`}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Thread Block Grid Selector Bar */}
+      <div className="glass-card p-3 border-slate-800 flex flex-wrap items-center justify-between gap-3 bg-slate-900/60">
+        <div className="flex items-center gap-2">
+          <Layers className="w-4 h-4 text-purple-400" />
+          <span className="text-xs font-bold text-slate-300">GPU Thread Block View Focus:</span>
+          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+            <button
+              onClick={() => setSelectedBlock('all')}
+              className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all ${
+                selectedBlock === 'all'
+                  ? 'bg-purple-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              All {gridDim}x{gridDim} Blocks (Full Grid)
+            </button>
+            {Array.from({ length: gridDim }).map((_, by) =>
+              Array.from({ length: gridDim }).map((_, bx) => {
+                const bKey = `${bx}_${by}`;
+                const isSelected = selectedBlock === bKey;
+                return (
+                  <button
+                    key={bKey}
+                    onClick={() => setSelectedBlock(bKey)}
+                    className={`px-2 py-1 text-xs font-mono font-bold rounded-md transition-all ${
+                      isSelected
+                        ? 'bg-cyan-500 text-slate-950 shadow-md'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Block({bx},{by})
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Quick button to open Reduction deep-dive */}
+        {onOpenReductionTab && (
+          <button
+            onClick={onOpenReductionTab}
+            className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 font-bold bg-emerald-950/40 px-3 py-1.5 rounded-lg border border-emerald-800/40 transition-all hover:border-emerald-500/50"
+          >
+            <Eye className="w-3.5 h-3.5" />
+            <span>Deep-Dive: Partial Products & Reduction Math ➔</span>
+          </button>
+        )}
       </div>
 
       {/* Interactive Phase Status Banner */}
@@ -242,7 +391,7 @@ export default function SimulatorView({
           {getExcelFormulaForCell(selectedCell.r, selectedCell.c, N)}
         </div>
         <div className="text-[11px] text-slate-400 font-mono hidden md:block">
-          Thread: <span className="text-cyan-400 font-bold">({selectedCell.c}, {selectedCell.r})</span> | Block: <span className="text-purple-400 font-bold">({selectedBx}, {selectedBy})</span>
+          Thread: <span className="text-cyan-400 font-bold">({selectedTx}, {selectedTy})</span> in Block: <span className="text-purple-400 font-bold">({selectedCellBx}, {selectedCellBy})</span>
         </div>
       </div>
 
@@ -258,7 +407,9 @@ export default function SimulatorView({
                   Global Memory DRAM (400-Cycle Latency)
                 </h3>
               </div>
-              <span className="text-[10px] text-slate-400 font-mono">Row-Major VRAM</span>
+              <span className="text-[10px] text-slate-400 font-mono">
+                {selectedBlock === 'all' ? 'All Blocks Loading' : `Block (${selBx}, ${selBy}) Slice`}
+              </span>
             </div>
 
             {/* Matrix A & B Grids Side-by-Side */}
@@ -267,7 +418,7 @@ export default function SimulatorView({
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-xs font-bold text-cyan-400">Matrix A ({N}x{N})</span>
-                  <span className="text-[10px] text-slate-400">Row {selectedCell.r + 1}</span>
+                  <span className="text-[10px] text-slate-400">Cols {currentStep.tileIndex * tileWidth}..{(currentStep.tileIndex + 1) * tileWidth - 1}</span>
                 </div>
                 <table className="excel-table w-full">
                   <thead>
@@ -293,7 +444,7 @@ export default function SimulatorView({
                               className={`excel-td font-mono text-xs ${
                                 isActive ? 'cell-active-tile-a' : isSelectedRow ? 'bg-cyan-950/30 text-cyan-200' : ''
                               }`}
-                              title={`Matrix A [${r}, ${c}] = ${val} (Global Addr: 0x${(r * N + c) * 4})`}
+                              title={`Matrix A [${r}, ${c}] = ${val}`}
                             >
                               {val}
                             </td>
@@ -309,7 +460,7 @@ export default function SimulatorView({
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-xs font-bold text-purple-400">Matrix B ({N}x{N})</span>
-                  <span className="text-[10px] text-slate-400">Col {selectedCell.c + 1}</span>
+                  <span className="text-[10px] text-slate-400">Rows {currentStep.tileIndex * tileWidth}..{(currentStep.tileIndex + 1) * tileWidth - 1}</span>
                 </div>
                 <table className="excel-table w-full">
                   <thead>
@@ -335,7 +486,7 @@ export default function SimulatorView({
                               className={`excel-td font-mono text-xs ${
                                 isActive ? 'cell-active-tile-b' : isSelectedCol ? 'bg-purple-950/30 text-purple-200' : ''
                               }`}
-                              title={`Matrix B [${r}, ${c}] = ${val} (Global Addr: 0x${(r * N + c) * 4})`}
+                              title={`Matrix B [${r}, ${c}] = ${val}`}
                             >
                               {val}
                             </td>
@@ -348,17 +499,17 @@ export default function SimulatorView({
               </div>
             </div>
 
-            {/* Fast On-Chip Shared Memory SRAM Buffers */}
+            {/* Fast On-Chip Shared Memory SRAM Buffers for Selected Block */}
             <div className="pt-2 border-t border-slate-800">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <Zap className="w-3.5 h-3.5 text-cyan-400" />
                   <span className="text-xs font-bold text-cyan-300">
-                    On-Chip Shared Memory SRAM Cache (20 Cycles)
+                    Shared Memory SRAM Cache for Block({selBx}, {selBy})
                   </span>
                 </div>
                 <span className="text-[10px] px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded font-mono">
-                  Active Tile Step m={currentStep.tileIndex}
+                  20 Cycles Latency
                 </span>
               </div>
 
@@ -366,12 +517,11 @@ export default function SimulatorView({
                 {/* SRAM As */}
                 <div>
                   <div className="text-[11px] font-mono font-bold text-cyan-400 mb-1 flex items-center justify-between">
-                    <span>As[{tileWidth}][{tileWidth}]</span>
-                    <span className="text-[9px] text-slate-500">SRAM Bank 0..{tileWidth - 1}</span>
+                    <span>As[{tileWidth}][{tileWidth}] (From Matrix A)</span>
                   </div>
                   <table className="excel-table w-full">
                     <tbody>
-                      {currentStep.sharedMemA.map((row, r) => (
+                      {activeBlockData.sharedA.map((row, r) => (
                         <tr key={r}>
                           {row.map((val, c) => {
                             const isComputeActive = currentStep.activeSramACol === c;
@@ -397,12 +547,11 @@ export default function SimulatorView({
                 {/* SRAM Bs */}
                 <div>
                   <div className="text-[11px] font-mono font-bold text-purple-400 mb-1 flex items-center justify-between">
-                    <span>Bs[{tileWidth}][{tileWidth}]</span>
-                    <span className="text-[9px] text-slate-500">SRAM Bank 0..{tileWidth - 1}</span>
+                    <span>Bs[{tileWidth}][{tileWidth}] (From Matrix B)</span>
                   </div>
                   <table className="excel-table w-full">
                     <tbody>
-                      {currentStep.sharedMemB.map((row, r) => (
+                      {activeBlockData.sharedB.map((row, r) => (
                         <tr key={r}>
                           {row.map((val, c) => {
                             const isComputeActive = currentStep.activeSramBRow === r;
@@ -439,7 +588,9 @@ export default function SimulatorView({
                   SM Core & Register Accumulators
                 </h3>
               </div>
-              <span className="text-[10px] text-emerald-400 font-mono font-bold">Block (0,0) Focus</span>
+              <span className="text-[10px] text-emerald-400 font-mono font-bold">
+                All {N*N} Threads Active
+              </span>
             </div>
 
             {/* Matrix C Output Spreadsheet Grid */}
@@ -494,10 +645,12 @@ export default function SimulatorView({
               </table>
             </div>
 
-            {/* Thread Core Block Architecture (4x4 or 2x2 ALUs) */}
+            {/* Thread Core Block Architecture for Selected Block */}
             <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 space-y-2.5">
               <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-slate-300">Thread ALUs (Multiply-Add Units)</span>
+                <span className="font-bold text-slate-300">
+                  Threads in Block({selBx}, {selBy})
+                </span>
                 <span className="text-[10px] text-cyan-400 font-mono">SIMT Lockstep</span>
               </div>
 
@@ -505,12 +658,14 @@ export default function SimulatorView({
                 {Array.from({ length: tileWidth * tileWidth }).map((_, idx) => {
                   const ty = Math.floor(idx / tileWidth);
                   const tx = idx % tileWidth;
-                  const isThisThreadSelected = selectedCell.r === ty && selectedCell.c === tx;
-                  const regValue = currentStep.threadRegisters[ty][tx];
+                  const globalRow = selBy * tileWidth + ty;
+                  const globalCol = selBx * tileWidth + tx;
+                  const isThisThreadSelected = selectedCell.r === globalRow && selectedCell.c === globalCol;
+                  const regValue = currentStep.threadRegisters[globalRow][globalCol];
                   return (
                     <div
                       key={idx}
-                      onClick={() => setSelectedCell({ r: ty, c: tx })}
+                      onClick={() => setSelectedCell({ r: globalRow, c: globalCol })}
                       className={`p-2.5 rounded-lg border transition-all cursor-pointer ${
                         isThisThreadSelected
                           ? 'bg-emerald-950/50 border-emerald-400 shadow-md shadow-emerald-500/20'
@@ -522,11 +677,11 @@ export default function SimulatorView({
                           T({tx},{ty})
                         </span>
                         <span className="text-[9px] px-1 py-0.2 bg-slate-800 text-slate-400 rounded font-mono">
-                          ID: {ty * N + tx}
+                          Cell({globalCol},{globalRow})
                         </span>
                       </div>
                       <div className="text-[11px] text-slate-300">
-                        <span className="text-slate-500 text-[10px]">Register: </span>
+                        <span className="text-slate-500 text-[10px]">Accumulator: </span>
                         <span className="font-mono font-bold text-emerald-400">{regValue}</span>
                       </div>
                       <div className="text-[9px] text-slate-500 font-mono mt-0.5 truncate">
@@ -598,15 +753,15 @@ export default function SimulatorView({
                 </span>
               </div>
               <div className="flex justify-between py-1 border-b border-slate-800/60">
-                <span className="text-slate-400">Thread ID (threadIdx):</span>
-                <span className="font-mono font-bold text-cyan-400">
-                  ({selectedTx}, {selectedTy})
+                <span className="text-slate-400">Block ID (blockIdx):</span>
+                <span className="font-mono font-bold text-purple-400">
+                  ({selectedCellBx}, {selectedCellBy})
                 </span>
               </div>
               <div className="flex justify-between py-1 border-b border-slate-800/60">
-                <span className="text-slate-400">Block ID (blockIdx):</span>
-                <span className="font-mono font-bold text-purple-400">
-                  ({selectedBx}, {selectedBy})
+                <span className="text-slate-400">Thread ID in Block:</span>
+                <span className="font-mono font-bold text-cyan-400">
+                  ({selectedTx}, {selectedTy})
                 </span>
               </div>
               <div className="flex justify-between py-1 border-b border-slate-800/60">
@@ -616,17 +771,17 @@ export default function SimulatorView({
                 </span>
               </div>
               <div className="flex justify-between py-1 border-b border-slate-800/60">
-                <span className="text-slate-400">Accumulator Register:</span>
+                <span className="text-slate-400">Current Register Accumulator:</span>
                 <span className="font-mono font-bold text-amber-400">
                   {currentStep.threadRegisters[selectedCell.r][selectedCell.c]}
                 </span>
               </div>
               <div className="flex justify-between py-1">
-                <span className="text-slate-400">Final Cell Value:</span>
+                <span className="text-slate-400">Final Cell Result:</span>
                 <span className="font-mono font-bold text-emerald-300">
                   {currentStep.matrixC[selectedCell.r][selectedCell.c] !== null
                     ? currentStep.matrixC[selectedCell.r][selectedCell.c]
-                    : 'In Progress...'}
+                    : 'Computing...'}
                 </span>
               </div>
             </div>

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import Navbar from './components/Navbar';
 import SimulatorView from './components/SimulatorView';
+import BlockGemmReductionView from './components/BlockGemmReductionView';
 import ExcelMentalModelView from './components/ExcelMentalModelView';
 import HardwareArchView from './components/HardwareArchView';
 import WarpCoalescingView from './components/WarpCoalescingView';
@@ -46,6 +47,15 @@ export default function App() {
             setSelectedPreset={setSelectedPreset}
             algorithmMode={algorithmMode}
             setAlgorithmMode={setAlgorithmMode}
+            onOpenReductionTab={() => setActiveTab('block-reduction')}
+          />
+        )}
+
+        {activeTab === 'block-reduction' && (
+          <BlockGemmReductionView
+            matrixA={matrixA}
+            matrixB={matrixB}
+            tileWidth={tileWidth}
           />
         )}
 
@@ -69,7 +79,7 @@ export default function App() {
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
           <span>GPU Matrix Multiplication & Architecture Simulator • Excel Mental Model</span>
           <span className="font-mono text-[11px] text-slate-400">
-            CUDA 12.x • Tensor Core GEMM • SIMT Warp Scheduling
+            Block GEMM • Partial Product Matrix Sum • Register Reduction
           </span>
         </div>
       </footer>
